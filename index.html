@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ClipForge AI</title>
+<script src="https://cdn.tailwindcss.com/3.4.17" crossorigin="anonymous"></script>
+<!-- FFmpeg.wasm 0.12 UMD builds (pinned). Single-threaded core: works with or without SharedArrayBuffer. -->
+<script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/dist/umd/index.js" crossorigin="anonymous"></script>
+<style type="text/tailwindcss">
+  .field { @apply w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-fuchsia-400; }
+  .lbl { @apply block text-sm font-medium text-slate-300 mb-1; }
+</style>
+</head>
+<body class="bg-[#0f1220] text-slate-100 min-h-screen antialiased">
+<div class="max-w-5xl mx-auto px-4 py-8 space-y-6">
+
+  <header class="text-center space-y-1">
+    <h1 class="text-4xl sm:text-5xl font-extrabold tracking-tight text-fuchsia-300">ClipForge AI</h1>
+    <p class="text-slate-400">100% Browser-Based AI Viral Clip Generator</p>
+  </header>
+
+  <div id="alert" role="alert" class="hidden rounded-lg border border-red-500/50 bg-red-950/60 text-red-200 px-4 py-3 text-sm flex items-start gap-3">
+    <span id="alertMsg" class="flex-1"></span>
+    <button id="alertClose" class="text-red-300 hover:text-white" aria-label="Dismiss">✕</button>
+  </div>
+
+  <!-- API settings -->
+  <section class="rounded-xl border border-slate-700/70 bg-slate-800/50 p-4 space-y-4">
+    <div class="grid md:grid-cols-2 gap-4">
+      <div>
+        <label class="lbl" for="provider">AI provider</label>
+        <select id="provider" class="field">
+          <option value="gemini">Google Gemini (gemini-2.5-flash)</option>
+          <option value="groq">Groq (llama-3.3-70b-versatile)</option>
+        </select>
+      </div>
+      <div>
+        <div class="flex items-center justify-between">
+          <label class="lbl" for="apiKey">API key</label>
+          <label class="flex items-center gap-2 text-xs text-slate-400 mb-1 cursor-pointer">
+            <input id="saveKey" type="checkbox" class="accent-fuchsia-400"> Save key
+            <span id="savedTag" class="hidden text-emerald-400">✓ saved in this browser</span>
+          </label>
+        </div>
+        <input id="apiKey" type="password" autocomplete="off" placeholder="Paste your API key" class="field">
+      </div>
+    </div>
+    <div class="grid grid-cols-3 gap-4">
+      <div>
+        <label class="lbl" for="numClips">Number of clips (1–5)</label>
+        <input id="numClips" type="number" min="1" max="5" value="3" class="field">
+      </div>
+      <div>
+        <label class="lbl" for="minLen">Shortest clip (sec)</label>
+        <input id="minLen" type="number" min="10" max="170" value="30" class="field">
+      </div>
+      <div>
+        <label class="lbl" for="maxLen">Longest clip (sec)</label>
+        <input id="maxLen" type="number" min="15" max="180" value="60" class="field">
+      </div>
+    </div>
+    <p class="text-xs text-slate-500">Your key is sent only to the provider you pick. Everything else (transcription, cutting, cropping) runs locally in this tab.</p>
+  </section>
+
+  <!-- Uploader -->
+  <section class="rounded-xl border border-slate-700/70 bg-slate-800/50 p-4">
+    <div id="drop" tabindex="0" role="button" aria-label="Choose a video file"
+         class="cursor-pointer rounded-lg border-2 border-dashed border-slate-600 hover:border-fuchsia-400 focus:border-fuchsia-400 focus:outline-none transition-colors text-center py-10 px-4">
+      <p class="font-medium">Drop a video here, or click to browse</p>
+      <p class="text-sm text-slate-400 mt-1">MP4, MOV or WebM · the file never leaves your device</p>
+      <input id="file" type="file" accept=".mp4,.mov,.webm,video/mp4,video/quicktime,video/webm" class="hidden">
+    </div>
+    <div id="fileInfo" class="hidden mt-4 grid sm:grid-cols-[1fr_16rem] gap-4 items-start">
+      <div class="space-y-1 min-w-0">
+        <p id="fName" class="font-semibold truncate"></p>
+        <p id="fMeta" class="text-sm text-slate-400"></p>
+      </div>
+      <video id="preview" controls playsinline class="w-full rounded-lg bg-black max-h-56"></video>
+    </div>
+  </section>
+
+  <!-- Action & progress -->
+  <section class="rounded-xl border border-slate-700/70 bg-slate-800/50 p-4 space-y-4">
+    <button id="go" disabled class="w-full rounded-lg bg-fuchsia-500 hover:bg-fuchsia-400 disabled:bg-slate-700 disabled:text-slate-400 disabled:cursor-not-allowed text-slate-950 font-bold py-3 transition-colors">Generate Viral Clips</button>
+    <div id="progress" class="hidden space-y-2">
+      <div class="flex justify-between text-sm"><span id="stepLabel" class="text-slate-200"></span><span id="pct" class="text-slate-400"></span></div>
+      <div class="h-2 rounded-full bg-slate-700 overflow-hidden"><div id="bar" class="h-full w-0 bg-fuchsia-400 transition-all duration-300"></div></div>
+      <div id="logBox" class="h-36 overflow-y-auto rounded-lg bg-slate-950/70 border border-slate-800 p-3 font-mono text-xs text-slate-400 space-y-0.5"></div>
+    </div>
+  </section>
+
+  <!-- Results -->
+  <section id="results" class="hidden space-y-3">
+    <h2 class="text-xl font-bold">Your clips</h2>
+    <div id="grid" class="grid sm:grid-cols-2 lg:grid-cols-3 gap-5"></div>
+  </section>
+</div>
+
+<script type="module">
+const $ = id => document.getElementById(id);
+class AppError extends Error {}
+
+const TF_URL = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2';
+const FF_CLASS_WORKER = 'https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/umd/814.ffmpeg.js';
+const FF_CORE = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd';
+
+/* ---------- helpers ---------- */
+const LS = {
+  get(k, d = '') { try { return localStorage.getItem(k) ?? d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+  del(k) { try { localStorage.removeItem(k); } catch {} }
+};
+const fmtT = s => { s = Math.max(0, Math.round(s)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+const fmtSize = b => b > 1e9 ? (b / 1e9).toFixed(2) + ' GB' : (b / 1e6).toFixed(1) + ' MB';
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const showError = msg => { $('alertMsg').textContent = msg; $('alert').classList.remove('hidden'); $('alert').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); };
+const clearError = () => $('alert').classList.add('hidden');
+$('alertClose').onclick = clearError;
+
+function log(msg) {
+  const d = document.createElement('div');
+  d.textContent = new Date().toLocaleTimeString() + '  ' + msg;
+  $('logBox').appendChild(d);
+  $('logBox').scrollTop = $('logBox').scrollHeight;
+}
+function setProgress(step, frac, label) {
+  const total = clamp(((step - 1) + clamp(frac, 0, 1)) / 4, 0, 1) * 100;
+  $('bar').style.width = total.toFixed(1) + '%';
+  $('pct').textContent = Math.round(total) + '%';
+  if (label) $('stepLabel').textContent = label;
+}
+
+/* ---------- settings persistence ---------- */
+$('provider').value = LS.get('cf_provider', 'gemini');
+$('saveKey').checked = LS.get('cf_save', '1') === '1';
+const keyName = () => 'cf_key_' + $('provider').value;
+function loadKey() { $('apiKey').value = $('saveKey').checked ? LS.get(keyName()) : ''; updateTag(); }
+function updateTag() { $('savedTag').classList.toggle('hidden', !($('saveKey').checked && $('apiKey').value)); }
+$('provider').onchange = () => { LS.set('cf_provider', $('provider').value); loadKey(); };
+$('apiKey').oninput = () => { if ($('saveKey').checked) LS.set(keyName(), $('apiKey').value.trim()); updateTag(); };
+$('saveKey').onchange = () => {
+  LS.set('cf_save', $('saveKey').checked ? '1' : '0');
+  if ($('saveKey').checked) LS.set(keyName(), $('apiKey').value.trim());
+  else ['gemini', 'groq'].forEach(p => LS.del('cf_key_' + p));
+  updateTag();
+};
+loadKey();
+
+/* ---------- file selection ---------- */
+let file = null, meta = { w: 0, h: 0, dur: 0 }, previewURL = null;
+const drop = $('drop');
+drop.onclick = () => $('file').click();
+drop.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('file').click(); } };
+drop.ondragover = e => { e.preventDefault(); drop.classList.add('border-fuchsia-400'); };
+drop.ondragleave = () => drop.classList.remove('border-fuchsia-400');
+drop.ondrop = e => { e.preventDefault(); drop.classList.remove('border-fuchsia-400'); if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); };
+$('file').onchange = e => { if (e.target.files[0]) setFile(e.target.files[0]); };
+
+function setFile(f) {
+  clearError();
+  if (!/\.(mp4|mov|webm)$/i.test(f.name) && !/^video\/(mp4|quicktime|webm)$/.test(f.type)) {
+    return showError('Unsupported file type. Please choose an .mp4, .mov or .webm video.');
+  }
+  file = f;
+  if (previewURL) URL.revokeObjectURL(previewURL);
+  previewURL = URL.createObjectURL(f);
+  const v = $('preview');
+  v.src = previewURL;
+  v.onloadedmetadata = () => {
+    meta = { w: v.videoWidth, h: v.videoHeight, dur: v.duration };
+    $('fMeta').textContent = `${fmtSize(f.size)} · ${fmtT(meta.dur)} · ${meta.w}×${meta.h}`;
+  };
+  v.onerror = () => showError('Your browser cannot play this video. Try an H.264 MP4 or a WebM file.');
+  $('fName').textContent = f.name;
+  $('fMeta').textContent = fmtSize(f.size);
+  $('fileInfo').classList.remove('hidden');
+  $('go').disabled = false;
+  if (f.size > 1.5e9) showError('This file is very large. Browsers can run out of memory above ~2 GB, so a smaller file is safer.');
+}
+
+/* ---------- Step 1: audio -> 16 kHz mono Float32Array ---------- */
+async function extractAudio(f) {
+  const buf = await f.arrayBuffer();
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  let decoded;
+  try { decoded = await ctx.decodeAudioData(buf); }
+  catch { throw new AppError('No audio track could be read from this video. ClipForge needs speech to find highlights.'); }
+  finally { ctx.close(); }
+  if (!decoded.length || decoded.duration < 1) throw new AppError('This video has no usable audio track.');
+  const off = new OfflineAudioContext(1, Math.ceil(decoded.duration * 16000), 16000);
+  const src = off.createBufferSource();
+  src.buffer = decoded; src.connect(off.destination); src.start();
+  const data = (await off.startRendering()).getChannelData(0);
+  let peak = 0;
+  for (let i = 0; i < data.length; i += 50) peak = Math.max(peak, Math.abs(data[i]));
+  if (peak < 1e-4) throw new AppError('The audio track in this video is silent, so there is nothing to transcribe.');
+  return data;
+}
+
+/* ---------- Step 2: Whisper in a module Web Worker ---------- */
+const WORKER_SRC = `
+import { pipeline, env } from '${TF_URL}';
+env.allowLocalModels = false;
+let asr;
+self.onmessage = async ({ data }) => {
+  try {
+    if (!asr) {
+      asr = await pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny.en', {
+        progress_callback: p => { if (p.status === 'progress') self.postMessage({ type: 'dl', file: p.file, pct: p.progress }); }
+      });
+    }
+    self.postMessage({ type: 'run' });
+    const out = await asr(data.audio, { return_timestamps: true, chunk_length_s: 30, stride_length_s: 5 });
+    self.postMessage({ type: 'done', chunks: out.chunks || [] });
+  } catch (e) {
+    self.postMessage({ type: 'error', message: String((e && e.message) || e) });
+  }
+};`;
+
+function transcribe(audio) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(new Blob([WORKER_SRC], { type: 'text/javascript' }));
+    const w = new Worker(url, { type: 'module' });
+    let timer = null, lastDl = -1;
+    const done = fn => v => { clearInterval(timer); w.terminate(); URL.revokeObjectURL(url); fn(v); };
+    const ok = done(resolve), fail = done(reject);
+    w.onmessage = ({ data: m }) => {
+      if (m.type === 'dl') {
+        const p = Math.round(m.pct);
+        if (p % 10 === 0 && p !== lastDl) { lastDl = p; log(`Downloading Whisper model (${m.file.split('/').pop()}): ${p}%`); }
+        setProgress(2, m.pct / 100 * 0.3, `Step 2/4: Downloading speech model… ${p}%`);
+      } else if (m.type === 'run') {
+        const t0 = Date.now();
+        log('Model ready. Transcribing…');
+        timer = setInterval(() => {
+          const s = (Date.now() - t0) / 1000;
+          setProgress(2, 0.3 + 0.65 * (1 - Math.exp(-s / (audio.length / 16000 / 6 + 20))), `Step 2/4: Transcribing speech locally… ${Math.round(s)}s`);
+        }, 500);
+      } else if (m.type === 'done') ok(m.chunks);
+      else if (m.type === 'error') fail(new AppError('Transcription failed: ' + m.message));
+    };
+    w.onerror = e => fail(new AppError('Could not start the transcription worker (' + (e.message || 'network or CDN problem') + ').'));
+    w.postMessage({ audio }, [audio.buffer]);
+  });
+}
+
+function buildTranscript(chunks, dur) {
+  const segs = chunks.map((c, i) => {
+    const [s, e] = c.timestamp;
+    return { s: s ?? 0, e: e ?? chunks[i + 1]?.timestamp?.[0] ?? dur, t: (c.text || '').trim() };
+  }).filter(x => x.t);
+  const lines = []; let cur = null;
+  for (const g of segs) {
+    if (!cur) cur = { ...g }; else { cur.e = g.e; cur.t += ' ' + g.t; }
+    if (cur.e - cur.s >= 8) { lines.push(cur); cur = null; }
+  }
+  if (cur) lines.push(cur);
+  return lines.map(l => `[${l.s.toFixed(1)} - ${l.e.toFixed(1)}] ${l.t}`).join('\n');
+}
+
+/* ---------- Step 3: AI highlight detection ---------- */
+const SYSTEM = 'You are an expert short-form video editor for TikTok, Instagram Reels and YouTube Shorts. You respond with valid JSON only.';
+
+async function askAI(provider, key, transcript, n, minL, maxL, dur) {
+  const prompt = `Below is a timestamped transcript ([start - end] in seconds) of a ${fmtT(dur)} video.
+Select the ${n} most engaging, self-contained moments that would perform best as vertical short-form clips. Each clip must:
+- start on a strong hook and end on a natural conclusion (never mid-sentence)
+- be between ${minL} and ${maxL} seconds long
+- not overlap another clip
+- use start_time and end_time (in seconds) that fall inside the transcript timestamps
+
+Respond ONLY with a valid JSON array, no markdown, no commentary, exactly in this schema:
+[{"title": "Catchy Hook Title", "start_time": 12.5, "end_time": 48.0, "reason": "Why this clip will perform well"}]
+
+TRANSCRIPT:
+${transcript}`;
+  let res;
+  try {
+    if (provider === 'gemini') {
+      res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: SYSTEM }] },
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.7, responseMimeType: 'application/json' }
+        })
+      });
+    } else {
+      res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile', temperature: 0.7,
+          messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: prompt }]
+        })
+      });
+    }
+  } catch {
+    throw new AppError('Could not reach the AI provider. Check your internet connection or ad-blocker and try again.');
+  }
+  const raw = await res.text();
+  if (res.status === 429) throw new AppError('Rate limit reached for this API key. Wait a minute and try again, or switch provider.');
+  if (res.status === 401 || res.status === 403 || (res.status === 400 && /api key/i.test(raw))) throw new AppError('The provider rejected your API key. Check that it is correct and enabled.');
+  if (res.status === 413) throw new AppError('The transcript is too large for this provider’s request limit. Try a shorter video or switch to Gemini.');
+  if (!res.ok) throw new AppError(`AI provider error (${res.status}): ${raw.slice(0, 200)}`);
+  let body;
+  try { body = JSON.parse(raw); } catch { throw new AppError('The AI provider returned an unreadable response.'); }
+  const text = provider === 'gemini' ? body.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') : body.choices?.[0]?.message?.content;
+  if (!text) throw new AppError('The AI returned an empty response (it may have been blocked). Try again.');
+  return text;
+}
+
+function parseClips(text, n, minL, maxL, dur) {
+  let t = text.replace(/```(?:json)?/gi, '').trim();
+  let data;
+  try { data = JSON.parse(t); }
+  catch {
+    const a = t.indexOf('['), b = t.lastIndexOf(']');
+    if (a < 0 || b <= a) throw new AppError('The AI did not return valid JSON. Please try again.');
+    try { data = JSON.parse(t.slice(a, b + 1)); } catch { throw new AppError('The AI returned malformed JSON. Please try again.'); }
+  }
+  if (!Array.isArray(data)) data = Object.values(data).find(Array.isArray) || [];
+  const clips = [];
+  for (const c of data) {
+    let s = Number(c.start_time), e = Number(c.end_time);
+    if (!isFinite(s) || !isFinite(e)) continue;
+    s = clamp(s, 0, dur); e = clamp(e, 0, dur);
+    if (e - s > maxL) e = s + maxL;
+    if (e - s < Math.min(5, minL)) continue;
+    clips.push({ title: String(c.title || 'Viral clip').slice(0, 90), start: s, end: e, reason: String(c.reason || '') });
+  }
+  if (!clips.length) throw new AppError('The AI did not suggest any usable clips. Try again or adjust the clip length.');
+  return clips.slice(0, n);
+}
+
+/* ---------- Step 4: FFmpeg.wasm crop + cut ---------- */
+let ffmpeg = null;
+async function getFFmpeg() {
+  if (ffmpeg) return ffmpeg;
+  if (!window.FFmpegWASM || !window.FFmpegUtil) throw new AppError('FFmpeg.wasm failed to load from the CDN. Check your connection and reload the page.');
+  const ff = new FFmpegWASM.FFmpeg();
+  const { toBlobURL } = FFmpegUtil;
+  await ff.load({
+    classWorkerURL: await toBlobURL(FF_CLASS_WORKER, 'text/javascript'),
+    coreURL: await toBlobURL(FF_CORE + '/ffmpeg-core.js', 'text/javascript'),
+    wasmURL: await toBlobURL(FF_CORE + '/ffmpeg-core.wasm', 'application/wasm')
+  });
+  return (ffmpeg = ff);
+}
+
+async function mountInput(ff, f) {
+  const ext = (f.name.split('.').pop() || 'mp4').toLowerCase().replace(/[^a-z0-9]/g, '') || 'mp4';
+  const name = 'input.' + ext;
+  try { // WORKERFS reads the file lazily, so a big video is not copied into WASM memory
+    try { await ff.unmount('/work'); } catch {}
+    try { await ff.createDir('/work'); } catch {}
+    await ff.mount('WORKERFS', { files: [new File([f], name, { type: f.type })] }, '/work');
+    return '/work/' + name;
+  } catch {
+    log('Lazy file mount unavailable, copying video into memory…');
+    await ff.writeFile(name, await FFmpegUtil.fetchFile(f));
+    return name;
+  }
+}
+
+function cropFilter() {
+  // Wide/square/4:5 sources: crop width to 9:16. Sources taller than 9:16: crop height instead.
+  const wide = !meta.h || meta.w / meta.h >= 9 / 16;
+  const crop = wide ? 'crop=ih*9/16:ih:(iw-ih*9/16)/2:0' : 'crop=iw:iw*16/9:0:(ih-iw*16/9)/2';
+  return crop + ',scale=1080:1920,setsar=1,format=yuv420p';
+}
+
+async function renderClips(clips) {
+  setProgress(4, 0, 'Step 4/4: Loading FFmpeg…');
+  log('Loading FFmpeg.wasm…');
+  const ff = await getFFmpeg();
+  const input = await mountInput(ff, file);
+  for (let i = 0; i < clips.length; i++) {
+    const c = clips[i], out = `clip_${i + 1}.mp4`;
+    log(`Rendering clip ${i + 1}/${clips.length}: "${c.title}" (${fmtT(c.start)}–${fmtT(c.end)})`);
+    const onP = ({ progress }) => {
+      const p = clamp(progress, 0, 1);
+      setProgress(4, (i + p) / clips.length, `Step 4/4: Cropping & rendering 9:16 vertical clips… clip ${i + 1}/${clips.length} (${Math.round(p * 100)}%)`);
+    };
+    ff.on('progress', onP);
+    let code;
+    try {
+      code = await ff.exec(['-ss', c.start.toFixed(2), '-to', c.end.toFixed(2), '-i', input, '-vf', cropFilter(),
+        '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23', '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', '-y', out]);
+    } finally { ff.off('progress', onP); }
+    if (code !== 0) throw new AppError(`FFmpeg could not render clip ${i + 1}. The video codec may not be supported (try an H.264 MP4).`);
+    const data = await ff.readFile(out);
+    await ff.deleteFile(out);
+    addCard(c, URL.createObjectURL(new Blob([data.buffer], { type: 'video/mp4' })));
+    setProgress(4, (i + 1) / clips.length);
+  }
+}
+
+/* ---------- results ---------- */
+const blobURLs = [];
+function addCard(c, url) {
+  blobURLs.push(url);
+  $('results').classList.remove('hidden');
+  const card = document.createElement('article');
+  card.className = 'rounded-xl border border-slate-700/70 bg-slate-800/60 overflow-hidden flex flex-col';
+  const v = document.createElement('video');
+  v.src = url; v.controls = true; v.playsInline = true; v.className = 'w-full aspect-[9/16] bg-black object-cover';
+  const body = document.createElement('div');
+  body.className = 'p-4 space-y-2 flex-1 flex flex-col';
+  const h = document.createElement('h3'); h.className = 'font-bold leading-snug'; h.textContent = c.title;
+  const badge = document.createElement('span');
+  badge.className = 'self-start text-xs rounded-full bg-fuchsia-500/20 text-fuchsia-200 px-2 py-0.5';
+  badge.textContent = `${Math.round(c.end - c.start)}s · from ${fmtT(c.start)}`;
+  const why = document.createElement('p'); why.className = 'text-sm text-slate-400 flex-1';
+  const strong = document.createElement('span'); strong.className = 'text-slate-200 font-medium'; strong.textContent = 'Why it works: ';
+  why.append(strong, c.reason);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = (c.title.replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_').slice(0, 60) || 'clip') + '.mp4';
+  a.className = 'block text-center rounded-lg bg-fuchsia-500 hover:bg-fuchsia-400 text-slate-950 font-bold py-2 transition-colors';
+  a.textContent = 'Download MP4';
+  body.append(h, badge, why, a);
+  card.append(v, body);
+  $('grid').appendChild(card);
+}
+
+/* ---------- orchestration ---------- */
+$('go').onclick = async () => {
+  clearError();
+  const provider = $('provider').value, key = $('apiKey').value.trim();
+  if (!file) return showError('Please choose a video first.');
+  if (!key) return showError(`Please enter your ${provider === 'gemini' ? 'Google Gemini' : 'Groq'} API key above.`);
+  const n = clamp(parseInt($('numClips').value) || 3, 1, 5);
+  let minL = clamp(parseInt($('minLen').value) || 30, 10, 170);
+  let maxL = clamp(parseInt($('maxLen').value) || 60, 15, 180);
+  if (maxL < minL) [minL, maxL] = [maxL, minL];
+
+  blobURLs.splice(0).forEach(u => URL.revokeObjectURL(u));
+  $('grid').replaceChildren(); $('results').classList.add('hidden'); $('logBox').replaceChildren();
+  $('progress').classList.remove('hidden'); $('go').disabled = true;
+  try {
+    setProgress(1, 0, 'Step 1/4: Extracting audio…'); log('Decoding audio track…');
+    const audio = await extractAudio(file);
+    const dur = meta.dur || audio.length / 16000;
+    log(`Audio ready: ${fmtT(audio.length / 16000)} at 16 kHz mono.`);
+
+    setProgress(2, 0, 'Step 2/4: Transcribing speech locally…');
+    const chunks = await transcribe(audio);
+    let transcript = buildTranscript(chunks, dur);
+    if (!transcript) throw new AppError('No speech was detected in this video, so no highlights can be chosen.');
+    log(`Transcript ready (${chunks.length} segments).`);
+
+    setProgress(3, 0.2, 'Step 3/4: AI selecting viral hooks…');
+    if (provider === 'groq' && transcript.length > 28000) {
+      transcript = transcript.slice(0, 28000);
+      log('Transcript trimmed to fit Groq’s request limit; only the first part of the video is analysed.');
+    }
+    log(`Asking ${provider === 'gemini' ? 'Gemini' : 'Groq'} for the best moments…`);
+    const clips = parseClips(await askAI(provider, key, transcript, n, minL, maxL, dur), n, minL, maxL, dur);
+    clips.forEach(c => log(`Picked: "${c.title}" ${fmtT(c.start)}–${fmtT(c.end)}`));
+    setProgress(3, 1);
+
+    await renderClips(clips);
+    setProgress(4, 1, 'Done! Your vertical clips are ready below.'); $('bar').style.width = '100%'; $('pct').textContent = '100%';
+    log('All clips rendered.');
+  } catch (e) {
+    console.error(e);
+    log('Stopped: ' + e.message);
+    showError(e instanceof AppError ? e.message : 'Something went wrong: ' + (e.message || e));
+  } finally {
+    $('go').disabled = false;
+  }
+};
+</script>
+</body>
+</html>
