@@ -8,26 +8,40 @@
 <!-- FFmpeg.wasm 0.12 UMD builds (pinned). Single-threaded core: works with or without SharedArrayBuffer. -->
 <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/dist/umd/index.js" crossorigin="anonymous"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet" crossorigin="anonymous">
 <style type="text/tailwindcss">
-  .field { @apply w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-fuchsia-400; }
-  .lbl { @apply block text-sm font-medium text-slate-300 mb-1; }
+  :root { color-scheme: dark; }
+  html { background: #05060a; }
+  body { font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+         background: radial-gradient(60rem 28rem at 50% -8rem, rgba(139,92,246,.22), transparent 70%), #05060a; }
+  .display { font-family: 'Space Grotesk', Inter, sans-serif; }
+  .panel { @apply rounded-2xl border border-white/10 bg-white/[0.03] p-5 backdrop-blur; }
+  .field { @apply w-full rounded-xl bg-black/40 border border-white/10 px-3.5 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 transition focus:outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-500/30; }
+  .lbl { @apply block text-sm font-medium text-zinc-300 mb-1.5; }
+  .drag-on { border-color: #a78bfa !important; background: rgba(139,92,246,.08); }
+  #steps li { @apply flex-1 rounded-lg border border-white/10 px-3 py-2 text-xs text-zinc-500 transition; }
+  #steps li[data-s=on] { @apply border-violet-400/60 bg-violet-500/10 text-violet-200; }
+  #steps li[data-s=done] { @apply border-emerald-400/40 text-emerald-300; }
+  ::-webkit-scrollbar { width: 8px; } ::-webkit-scrollbar-thumb { background: #27272a; border-radius: 8px; }
 </style>
 </head>
-<body class="bg-[#0f1220] text-slate-100 min-h-screen antialiased">
-<div class="max-w-5xl mx-auto px-4 py-8 space-y-6">
+<body class="text-zinc-100 min-h-screen antialiased">
+<div class="max-w-5xl mx-auto px-4 py-10 space-y-6">
 
-  <header class="text-center space-y-1">
-    <h1 class="text-4xl sm:text-5xl font-extrabold tracking-tight text-fuchsia-300">ClipForge AI</h1>
-    <p class="text-slate-400">100% Browser-Based AI Viral Clip Generator</p>
+  <header class="text-center space-y-3 pb-2">
+    <h1 class="display text-5xl sm:text-6xl font-bold tracking-tight bg-gradient-to-b from-white to-violet-300 bg-clip-text text-transparent">ClipForge AI</h1>
+    <p class="text-zinc-400 text-lg">100% Browser-Based AI Viral Clip Generator</p>
+    <p class="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-xs text-zinc-400"><span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>Your video never leaves this device</p>
   </header>
 
-  <div id="alert" role="alert" class="hidden rounded-lg border border-red-500/50 bg-red-950/60 text-red-200 px-4 py-3 text-sm flex items-start gap-3">
+  <div id="alert" role="alert" class="hidden rounded-xl border border-red-500/40 bg-red-500/10 text-red-200 px-4 py-3 text-sm flex items-start gap-3">
     <span id="alertMsg" class="flex-1"></span>
     <button id="alertClose" class="text-red-300 hover:text-white" aria-label="Dismiss">✕</button>
   </div>
 
-  <!-- API settings -->
-  <section class="rounded-xl border border-slate-700/70 bg-slate-800/50 p-4 space-y-4">
+  <section class="panel space-y-5">
     <div class="grid md:grid-cols-2 gap-4">
       <div>
         <label class="lbl" for="provider">AI provider</label>
@@ -39,8 +53,8 @@
       <div>
         <div class="flex items-center justify-between">
           <label class="lbl" for="apiKey">API key</label>
-          <label class="flex items-center gap-2 text-xs text-slate-400 mb-1 cursor-pointer">
-            <input id="saveKey" type="checkbox" class="accent-fuchsia-400"> Save key
+          <label class="flex items-center gap-2 text-xs text-zinc-400 mb-1.5 cursor-pointer">
+            <input id="saveKey" type="checkbox" class="accent-violet-500"> Save key
             <span id="savedTag" class="hidden text-emerald-400">✓ saved in this browser</span>
           </label>
         </div>
@@ -48,52 +62,44 @@
       </div>
     </div>
     <div class="grid grid-cols-3 gap-4">
-      <div>
-        <label class="lbl" for="numClips">Number of clips (1–5)</label>
-        <input id="numClips" type="number" min="1" max="5" value="3" class="field">
-      </div>
-      <div>
-        <label class="lbl" for="minLen">Shortest clip (sec)</label>
-        <input id="minLen" type="number" min="10" max="170" value="30" class="field">
-      </div>
-      <div>
-        <label class="lbl" for="maxLen">Longest clip (sec)</label>
-        <input id="maxLen" type="number" min="15" max="180" value="60" class="field">
-      </div>
+      <div><label class="lbl" for="numClips">Clips (1–5)</label><input id="numClips" type="number" min="1" max="5" value="3" class="field"></div>
+      <div><label class="lbl" for="minLen">Shortest (sec)</label><input id="minLen" type="number" min="10" max="170" value="30" class="field"></div>
+      <div><label class="lbl" for="maxLen">Longest (sec)</label><input id="maxLen" type="number" min="15" max="180" value="60" class="field"></div>
     </div>
-    <p class="text-xs text-slate-500">Your key is sent only to the provider you pick. Everything else (transcription, cutting, cropping) runs locally in this tab.</p>
+    <p class="text-xs text-zinc-500">Your key is sent only to the provider you pick. Transcription, cutting and cropping all run locally in this tab.</p>
   </section>
 
-  <!-- Uploader -->
-  <section class="rounded-xl border border-slate-700/70 bg-slate-800/50 p-4">
+  <section class="panel">
     <div id="drop" tabindex="0" role="button" aria-label="Choose a video file"
-         class="cursor-pointer rounded-lg border-2 border-dashed border-slate-600 hover:border-fuchsia-400 focus:border-fuchsia-400 focus:outline-none transition-colors text-center py-10 px-4">
-      <p class="font-medium">Drop a video here, or click to browse</p>
-      <p class="text-sm text-slate-400 mt-1">MP4, MOV or WebM · the file never leaves your device</p>
+         class="cursor-pointer rounded-xl border-2 border-dashed border-white/15 hover:border-violet-400/70 focus:border-violet-400 focus:outline-none transition text-center py-12 px-4">
+      <div class="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-full bg-violet-500/15 text-violet-300 text-2xl">↑</div>
+      <p class="font-semibold">Drop a video here, or click to browse</p>
+      <p class="text-sm text-zinc-500 mt-1">MP4, MOV or WebM</p>
       <input id="file" type="file" accept=".mp4,.mov,.webm,video/mp4,video/quicktime,video/webm" class="hidden">
     </div>
-    <div id="fileInfo" class="hidden mt-4 grid sm:grid-cols-[1fr_16rem] gap-4 items-start">
+    <div id="fileInfo" class="hidden mt-5 grid sm:grid-cols-[1fr_18rem] gap-5 items-start">
       <div class="space-y-1 min-w-0">
         <p id="fName" class="font-semibold truncate"></p>
-        <p id="fMeta" class="text-sm text-slate-400"></p>
+        <p id="fMeta" class="text-sm text-zinc-400"></p>
       </div>
-      <video id="preview" controls playsinline class="w-full rounded-lg bg-black max-h-56"></video>
+      <video id="preview" controls playsinline class="w-full rounded-xl bg-black max-h-56 border border-white/10"></video>
     </div>
   </section>
 
-  <!-- Action & progress -->
-  <section class="rounded-xl border border-slate-700/70 bg-slate-800/50 p-4 space-y-4">
-    <button id="go" disabled class="w-full rounded-lg bg-fuchsia-500 hover:bg-fuchsia-400 disabled:bg-slate-700 disabled:text-slate-400 disabled:cursor-not-allowed text-slate-950 font-bold py-3 transition-colors">Generate Viral Clips</button>
-    <div id="progress" class="hidden space-y-2">
-      <div class="flex justify-between text-sm"><span id="stepLabel" class="text-slate-200"></span><span id="pct" class="text-slate-400"></span></div>
-      <div class="h-2 rounded-full bg-slate-700 overflow-hidden"><div id="bar" class="h-full w-0 bg-fuchsia-400 transition-all duration-300"></div></div>
-      <div id="logBox" class="h-36 overflow-y-auto rounded-lg bg-slate-950/70 border border-slate-800 p-3 font-mono text-xs text-slate-400 space-y-0.5"></div>
+  <section class="panel space-y-4">
+    <button id="go" disabled class="w-full rounded-xl bg-gradient-to-r from-violet-500 to-fuchsia-500 hover:from-violet-400 hover:to-fuchsia-400 disabled:from-zinc-800 disabled:to-zinc-800 disabled:text-zinc-500 disabled:cursor-not-allowed text-white font-semibold py-3.5 shadow-lg shadow-violet-900/30 transition">Generate Viral Clips</button>
+    <div id="progress" class="hidden space-y-3">
+      <ol id="steps" class="flex gap-2">
+        <li>1 · Audio</li><li>2 · Transcribe</li><li>3 · Highlights</li><li>4 · Render</li>
+      </ol>
+      <div class="flex justify-between text-sm"><span id="stepLabel" class="text-zinc-200"></span><span id="pct" class="text-zinc-500"></span></div>
+      <div class="h-2 rounded-full bg-white/10 overflow-hidden"><div id="bar" class="h-full w-0 bg-gradient-to-r from-violet-400 to-fuchsia-400 transition-all duration-300"></div></div>
+      <div id="logBox" class="h-36 overflow-y-auto rounded-xl bg-black/50 border border-white/10 p-3 font-mono text-xs text-zinc-500 space-y-0.5"></div>
     </div>
   </section>
 
-  <!-- Results -->
-  <section id="results" class="hidden space-y-3">
-    <h2 class="text-xl font-bold">Your clips</h2>
+  <section id="results" class="hidden space-y-4">
+    <h2 class="display text-2xl font-bold">Your clips</h2>
     <div id="grid" class="grid sm:grid-cols-2 lg:grid-cols-3 gap-5"></div>
   </section>
 </div>
@@ -130,6 +136,7 @@ function setProgress(step, frac, label) {
   $('bar').style.width = total.toFixed(1) + '%';
   $('pct').textContent = Math.round(total) + '%';
   if (label) $('stepLabel').textContent = label;
+  [...$('steps').children].forEach((el, i) => { el.dataset.s = (i + 1 < step || (step === 4 && frac >= 1)) ? 'done' : (i + 1 === step ? 'on' : ''); });
 }
 
 /* ---------- settings persistence ---------- */
@@ -153,9 +160,9 @@ let file = null, meta = { w: 0, h: 0, dur: 0 }, previewURL = null;
 const drop = $('drop');
 drop.onclick = () => $('file').click();
 drop.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('file').click(); } };
-drop.ondragover = e => { e.preventDefault(); drop.classList.add('border-fuchsia-400'); };
-drop.ondragleave = () => drop.classList.remove('border-fuchsia-400');
-drop.ondrop = e => { e.preventDefault(); drop.classList.remove('border-fuchsia-400'); if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); };
+drop.ondragover = e => { e.preventDefault(); drop.classList.add('drag-on'); };
+drop.ondragleave = () => drop.classList.remove('drag-on');
+drop.ondrop = e => { e.preventDefault(); drop.classList.remove('drag-on'); if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); };
 $('file').onchange = e => { if (e.target.files[0]) setFile(e.target.files[0]); };
 
 function setFile(f) {
@@ -203,6 +210,10 @@ async function extractAudio(f) {
 const WORKER_SRC = `
 import { pipeline, env } from '${TF_URL}';
 env.allowLocalModels = false;
+// Run ONNX Runtime inside this (blob) worker: no proxy worker and no thread pool,
+// so it never tries to construct a Worker from a cross-origin CDN script.
+env.backends.onnx.wasm.proxy = false;
+env.backends.onnx.wasm.numThreads = 1;
 let asr;
 self.onmessage = async ({ data }) => {
   try {
@@ -405,22 +416,22 @@ function addCard(c, url) {
   blobURLs.push(url);
   $('results').classList.remove('hidden');
   const card = document.createElement('article');
-  card.className = 'rounded-xl border border-slate-700/70 bg-slate-800/60 overflow-hidden flex flex-col';
+  card.className = 'rounded-2xl border border-white/10 bg-white/[0.03] overflow-hidden flex flex-col transition hover:border-violet-400/40';
   const v = document.createElement('video');
   v.src = url; v.controls = true; v.playsInline = true; v.className = 'w-full aspect-[9/16] bg-black object-cover';
   const body = document.createElement('div');
   body.className = 'p-4 space-y-2 flex-1 flex flex-col';
-  const h = document.createElement('h3'); h.className = 'font-bold leading-snug'; h.textContent = c.title;
+  const h = document.createElement('h3'); h.className = 'display font-bold text-lg leading-snug'; h.textContent = c.title;
   const badge = document.createElement('span');
-  badge.className = 'self-start text-xs rounded-full bg-fuchsia-500/20 text-fuchsia-200 px-2 py-0.5';
+  badge.className = 'self-start text-xs rounded-full border border-violet-400/30 bg-violet-500/15 text-violet-200 px-2.5 py-0.5';
   badge.textContent = `${Math.round(c.end - c.start)}s · from ${fmtT(c.start)}`;
-  const why = document.createElement('p'); why.className = 'text-sm text-slate-400 flex-1';
-  const strong = document.createElement('span'); strong.className = 'text-slate-200 font-medium'; strong.textContent = 'Why it works: ';
+  const why = document.createElement('p'); why.className = 'text-sm text-zinc-400 flex-1';
+  const strong = document.createElement('span'); strong.className = 'text-zinc-200 font-medium'; strong.textContent = 'Why it works: ';
   why.append(strong, c.reason);
   const a = document.createElement('a');
   a.href = url;
   a.download = (c.title.replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_').slice(0, 60) || 'clip') + '.mp4';
-  a.className = 'block text-center rounded-lg bg-fuchsia-500 hover:bg-fuchsia-400 text-slate-950 font-bold py-2 transition-colors';
+  a.className = 'block text-center rounded-xl bg-gradient-to-r from-violet-500 to-fuchsia-500 hover:from-violet-400 hover:to-fuchsia-400 text-white font-semibold py-2.5 transition';
   a.textContent = 'Download MP4';
   body.append(h, badge, why, a);
   card.append(v, body);
